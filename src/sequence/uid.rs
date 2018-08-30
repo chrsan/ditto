@@ -18,10 +18,21 @@
 
 use base64;
 use Error;
-use num::bigint::{BigUint, ToBigUint};
-use num::cast::ToPrimitive;
-use rand::distributions::{IndependentSample, Range};
+use num_bigint::{BigUint, ToBigUint};
+use num_traits::cast::ToPrimitive;
+
+#[cfg(not(target_arch = "wasm32"))]
+use rand::distributions::{Range};
+
+#[cfg(not(target_arch = "wasm32"))]
+use rand::Rng;
+
+#[cfg(not(target_arch = "wasm32"))]
 use rand;
+
+#[cfg(target_arch = "wasm32")]
+use wbg_rand::{Rng, wasm_rng};
+
 use dot::{Dot, SiteId, Counter};
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use serde::de::{self, Visitor, SeqAccess};
@@ -114,6 +125,7 @@ impl Uid {
     /// boundary- returns an integer in the interval
     /// [max(pos1+1, pos2-BOUNDARY), pos2-1]
     ///
+    #[cfg(not(target_arch = "wasm32"))]
     fn generate_pos(pos1: usize, pos2: usize, level: usize) -> usize {
         let range =
             if Uid::use_boundary_plus_strategy(level) {
@@ -129,8 +141,37 @@ impl Uid {
                 let hi_bound = pos2;
                 Range::new(lo_bound, hi_bound)
             };
-        let mut rng = rand::thread_rng();
-        range.ind_sample(&mut rng)
+        let mut rng = rand::rngs::OsRng::new().unwrap();
+        rng.sample(range)
+    }
+
+    /// Generates a number that falls between pos1 and pos2.
+    /// It requires pos1 + 1 < pos2. Uses boundary+ strategy
+    /// on odd levels and boundary+ strategy on even levels.
+    ///
+    /// boundary+ returns an integer in the interval
+    /// [pos1+1, min(pos1+BOUNDARY, pos2-1)]
+    ///
+    /// boundary- returns an integer in the interval
+    /// [max(pos1+1, pos2-BOUNDARY), pos2-1]
+    ///
+    #[cfg(target_arch = "wasm32")]
+    fn generate_pos(pos1: usize, pos2: usize, level: usize) -> usize {
+        let (lo_bound, hi_bound) =
+            if Uid::use_boundary_plus_strategy(level) {
+                let lo_bound = pos1+1;
+                let hi_bound = cmp::min(pos1+BOUNDARY, pos2);
+                (lo_bound, hi_bound)
+            } else if pos2 <= BOUNDARY {
+                let lo_bound = pos1+1;
+                let hi_bound = pos2;
+                (lo_bound, hi_bound)
+            } else {
+                let lo_bound = cmp::max(pos1+1, pos2-BOUNDARY);
+                let hi_bound = pos2;
+                (lo_bound, hi_bound)
+            };
+        wasm_rng().gen_range(lo_bound, hi_bound)
     }
 
     // TODO: Use Boundary- for arrays on odd levels.
@@ -263,7 +304,7 @@ impl<'de> Deserialize<'de> for Uid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use num::bigint::{BigUint, ToBigUint};
+    use num_bigint::{BigUint, ToBigUint};
     use std::str::FromStr;
     use serde_json;
     use rmp_serde;
