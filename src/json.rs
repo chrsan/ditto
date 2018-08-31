@@ -198,7 +198,12 @@ impl Inner {
                 Ok(Op{pointer: remote_pointer, op})
             }
             Inner::Array(ref mut list) => {
-                let idx = usize::from_str(key)?;
+                let idx = if key == "-" {
+                    list.0.len()
+                } else {
+                    usize::from_str(key)?
+                };
+
                 let op = list.insert(idx, value, dot);
                 let op = OpInner::Array(op);
                 Ok(Op{pointer: remote_pointer, op})
@@ -218,7 +223,12 @@ impl Inner {
                 Ok(Op{pointer: remote_pointer, op: OpInner::Object(op)})
             }
             Inner::Array(ref mut list) => {
-                let idx = usize::from_str(key)?;
+                let idx = if key == "-" {
+                    list.0.len() - 1
+                } else {
+                    usize::from_str(key)?
+                };
+
                 let (_, op) = list.remove(idx);
                 Ok(Op{pointer: remote_pointer, op: OpInner::Array(op)})
             }
@@ -319,12 +329,18 @@ impl Inner {
     fn get_nested_local(&self, pointer: &[&str]) -> Option<&Inner> {
         let mut value = self;
 
-        for key in pointer {
+        let end = pointer.len() - 1;
+        for (index, key) in pointer.iter().enumerate() {
             value = match *value {
                 Inner::Object(ref map_inner) =>
                     &map_inner.0.get(*key)?[0].value,
                 Inner::Array(ref list_inner) => {
-                    let idx = usize::from_str(key).ok()?;
+                    let idx = if index == end && *key == "-" {
+                        list_inner.0.len() - 1
+                    } else {
+                        usize::from_str(key).ok()?
+                    };
+
                     let element = list_inner.0.get(idx)?;
                     &element.value
                 }
